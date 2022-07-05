@@ -1087,7 +1087,7 @@ class Speedtest(object):
     """Class for performing standard speedtest.net testing operations"""
 
     def __init__(self, config=None, source_address=None, timeout=10,
-                 secure=False, shutdown_event=None):
+                 secure=False, shutdown_event=None, custom_url=None):
         self.config = {}
 
         self._source_address = source_address
@@ -1101,6 +1101,7 @@ class Speedtest(object):
         else:
             self._shutdown_event = FakeShutdownEvent()
 
+        self.custom_url = custom_url
         self.get_config()
         if config is not None:
             self.config.update(config)
@@ -1126,6 +1127,9 @@ class Speedtest(object):
         we are interested in
         """
 
+        if self.custom_url:
+            print("  Will not actually contact speedtest.net for config info because custom_url is specified.")
+            return self.get_hardcoded_config_with_manual_url(self.custom_url)
         headers = {}
         if gzip:
             headers['Accept-Encoding'] = 'gzip'
@@ -1237,10 +1241,28 @@ class Speedtest(object):
 
         return self.config
 
+    def get_hardcoded_config_with_manual_url(self, url):
+        self.config.update({
+            'client': {
+                'ip': 'Unknown IP',
+                'isp': 'Unknown ISP',
+            },
+            'ignore_servers': [],
+            'sizes': {'upload': [524288, 1048576, 7340032],
+            'download': [350, 500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000]},
+            'counts': {'upload': 17, 'download': 4},
+            'threads': {'upload': 2, 'download': 8},
+            'length': {'upload': 10, 'download': 10},
+            'upload_max': 51,
+        })
+
     def get_servers(self, servers=None, exclude=None):
         """Retrieve a the list of speedtest.net servers, optionally filtered
         to servers matching those specified in the ``servers`` argument
         """
+        if self.custom_url:
+            print("  Will not actually contact speedtest.net for server list because custom_url is specified.")
+            return
         if servers is None:
             servers = []
 
@@ -1442,6 +1464,17 @@ class Speedtest(object):
         server has the lowest latency
         """
 
+        if self.custom_url:
+            best = {
+                'url': self.custom_url,
+                'name': self.custom_url,
+                'latency': 'NA',
+                'sponsor': 'Manually specified via custom_url',
+                'd': 1234567890,  # distance by km
+            }
+            self._best = self.results.server = best
+            print("  Will not actually do something because custom_url is specified.")
+            return best
         if not servers:
             if not self.closest:
                 servers = self.get_closest_servers()
@@ -1744,6 +1777,10 @@ def parse_args():
     parser.add_argument('--simple', action='store_true', default=False,
                         help='Suppress verbose output, only show basic '
                              'information')
+    parser.add_argument('--custom-url', action='store', default=None,
+                        help="To force use a custom speedtest URL; with this option, "
+                             "absolutely no request to speedtest.net is performed. "
+                             "This allows to use an URL that is not officially registered yet works.")
     parser.add_argument('--csv', action='store_true', default=False,
                         help='Suppress verbose output, only show basic '
                              'information in CSV format. Speeds listed in '
@@ -1885,6 +1922,7 @@ def shell():
         speedtest = Speedtest(
             source_address=args.source,
             timeout=args.timeout,
+            custom_url=args.custom_url,
             secure=args.secure
         )
     except (ConfigRetrievalError,) + HTTP_ERRORS:
